@@ -1,0 +1,67 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Build Rust binary
+        working-directory: src-tauri
+        run: cargo build --release
+
+      - name: Build Windows NSIS installer
+        shell: pwsh
+        run: |
+          foreach ($base in @("$env:LOCALAPPDATA\ort.pyke.io", "$env:APPDATA\ort.pyke.io")) {
+            if (Test-Path $base) {
+              Get-ChildItem $base -Recurse -Filter "*.dll" | ForEach-Object {
+                Copy-Item $_.FullName "src-tauri/target/release/" -Force
+              }
+            }
+          }
+          $dlls = Get-ChildItem "src-tauri/target/release/*.dll" -ErrorAction SilentlyContinue
+          if ($dlls) {
+            $dlls | Select-Object Name, Length
+            '{"bundle":{"targets":["nsis"],"resources":{"target/release/*.dll":"./"}}}' | Set-Content -Encoding UTF8 src-tauri/tauri.win.json
+          } else {
+            Write-Host "No external DLLs"
+            '{"bundle":{"targets":["nsis"]}}' | Set-Content -Encoding UTF8 src-tauri/tauri.win.json
+          }
+          npx tauri build --bundles nsis --config src-tauri/tauri.win.json
+          Remove-Item src-tauri/tauri.win.json -ErrorAction SilentlyContinue
+
+      - name: Upload Windows installer to Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v1.0.0' }
+          $exe = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "NSIS installer not found" }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create $tag --title $tag --notes "" }
+          gh release upload $tag $exe.FullName --clobber
