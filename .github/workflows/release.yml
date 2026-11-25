@@ -1,4 +1,4 @@
-name: Windows Release
+name: Release
 
 on:
   push:
@@ -65,3 +65,35 @@ jobs:
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) { gh release create $tag --title $tag --notes "" }
           gh release upload $tag $exe.FullName --clobber
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Build macOS app and DMG (Apple Silicon)
+        run: npx tauri build --bundles app,dmg
+
+      - name: Upload DMG to Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then TAG="$GITHUB_REF_NAME"; else TAG="v1.0.0"; fi
+          dmg=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)
+          if [ -z "$dmg" ]; then echo "DMG not found"; exit 1; fi
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --notes "" || true
+          gh release upload "$TAG" "$dmg" --clobber
