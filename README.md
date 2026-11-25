@@ -64,4 +64,4 @@ rm -rf ~/Library/Application\ Support/com.threxal.styx \
 - App code: **MIT** — see [LICENSE](LICENSE)
 - Background removal model (**BRIA RMBG 2.0**): **CC BY-NC 4.0** (non-commercial)
 - Third-party components: [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)
-- Author: [threxal](https://t.me/threxal)
+- Author: [unconform](https://t.me/unconform)
